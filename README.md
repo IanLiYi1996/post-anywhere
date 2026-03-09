@@ -1,28 +1,24 @@
-# wechat-channels-publish
+# post-anywhere
 
-A Claude Code skill for automating video publishing to **WeChat Channels (视频号)**.
+A Claude Code skill for automating content publishing to multiple social media platforms via browser automation.
 
-## What it does
+## Supported Platforms
 
-Automates the complete video publishing flow on `channels.weixin.qq.com`:
-
-1. Launches headless Chrome with remote debugging
-2. Shows QR code for WeChat login (user scans with phone)
-3. Uploads video file (navigating wujie micro-frontend shadow DOM)
-4. Fills video description, short title, and metadata
-5. Clicks publish and verifies success
+| Platform | Content Type | Automation Method |
+|----------|-------------|-------------------|
+| **微信视频号** (WeChat Channels) | Video | Playwright CDP + filechooser |
+| **小红书** (Xiaohongshu) | Image posts, Long articles | agent-browser |
+| **X** (Twitter) | Tweets | agent-browser |
+| **微博** (Weibo) | Posts with images/video | agent-browser |
+| **微信公众号** (WeChat Official Account) | Articles | agent-browser |
+| **掘金** (Juejin) | Articles | agent-browser |
+| **知乎** (Zhihu) | Thoughts (想法) | agent-browser |
+| **Linux.do** | Forum posts | agent-browser |
 
 ## Install
 
 ```bash
-claude skills add /path/to/wechat-channels-publish
-```
-
-Or clone this repo and add from local path:
-
-```bash
-git clone https://github.com/<your-username>/wechat-channels-publish.git
-claude skills add ./wechat-channels-publish
+claude skills add /path/to/post-anywhere
 ```
 
 ## Usage
@@ -31,60 +27,63 @@ Once installed, just tell Claude:
 
 ```
 帮我把 output/video.mp4 发布到视频号
-```
-
-or
-
-```
-Publish my video to WeChat Channels
+发到小红书
+发一条推文
+发微博
+发到公众号
+发掘金文章
+发知乎想法
+发到 LinuxDo
 ```
 
 The skill will trigger automatically and guide you through the process.
+
+## Safety
+
+All platforms default to **saving drafts only** — the skill will never auto-click the publish button. You always confirm and publish manually.
 
 ## Prerequisites
 
 - **Claude Code** with `agent-browser` skill installed
 - **Node.js** 18+
-- **Playwright** browsers: `npx playwright install chromium`
-- **System dependencies** (Amazon Linux / headless servers):
-  ```bash
-  sudo yum install -y atk at-spi2-atk cups-libs libdrm libXcomposite \
-    libXdamage libXrandr mesa-libgbm pango alsa-lib nss libxkbcommon
-  ```
-- **playwright** npm package in your project: `npm install playwright`
-
-## Technical Details
-
-WeChat Channels uses a **wujie micro-frontend** architecture, which means:
-
-- The page content lives inside a `<wujie-app>` shadow DOM host
-- Form elements are NOT accessible via standard `agent-browser` selectors
-- File upload requires Playwright's **filechooser event interception** (not standard `upload` command)
-- The description editor is a `contenteditable` div found via **Playwright frame access** (`page.frames()`)
-- Must use Chrome `--headless=new` mode — the old headless mode and headless shell don't render the QR code
-
-These workarounds are all documented in the skill and handled automatically.
+- For WeChat Channels (视频号) only:
+  - **Playwright** browsers: `npx playwright install chromium`
+  - **playwright** npm package: `npm install playwright`
+  - **System dependencies** (headless servers):
+    ```bash
+    sudo yum install -y atk at-spi2-atk cups-libs libdrm libXcomposite \
+      libXdamage libXrandr mesa-libgbm pango alsa-lib nss libxkbcommon
+    ```
 
 ## File Structure
 
 ```
-wechat-channels-publish/
-├── SKILL.md              # Full 8-step workflow with code examples
+post-anywhere/
+├── SKILL.md                      # Multi-platform routing + rules
+├── references/
+│   ├── 微信视频号.md              # WeChat Channels (Playwright CDP)
+│   ├── 小红书图文.md              # Xiaohongshu image posts
+│   ├── 小红书长文.md              # Xiaohongshu long articles
+│   ├── X推文.md                   # X/Twitter tweets
+│   ├── 微博.md                    # Weibo posts
+│   ├── 微信公众号文章.md          # WeChat Official Account articles
+│   ├── 掘金文章.md                # Juejin articles
+│   ├── 知乎想法.md                # Zhihu thoughts
+│   └── LinuxDo发帖.md             # Linux.do forum posts
 ├── scripts/
-│   └── publish.js        # Helper script for upload + form filling
+│   └── publish.js                 # Helper script (WeChat Channels only)
 └── README.md
 ```
 
-## Video Requirements
+## Adding New Platforms
 
-| Spec | Requirement |
-|------|------------|
-| Format | MP4 (H.264) |
-| Max size | 20GB |
-| Max duration | 8 hours |
-| Resolution | 720p+ recommended |
-| Aspect ratio | 9:16 (vertical) or 16:9 |
-| Short title | ≤ 16 characters |
+The skill supports self-evolution. Ask Claude to add a new platform:
+
+```
+帮我添加一个新的社交平台：抖音
+```
+
+It will test the interaction path step by step, then create a new workflow file in `references/`.
 
 ## License
 

@@ -1,195 +1,70 @@
 ---
-name: wechat-channels-publish
-description: Automate video publishing to WeChat Channels (视频号) via browser automation. Use this skill whenever the user wants to publish, upload, or post a video to 视频号/WeChat Channels/微信视频号. Also use when the user mentions "发布到视频号", "上传视频号", "视频号发布", or any task involving automated interaction with channels.weixin.qq.com. This skill handles the complete flow including Chrome setup, QR code login, video upload through wujie shadow DOM, form filling, and publishing.
+name: post-anywhere
+description: 使用 agent-browser 帮用户将内容发到社交媒体上。当用户需要发布内容、推送文章、上传视频、发帖到社交平台时使用此 skill。支持平台：视频号/WeChat Channels、小红书、X/Twitter、微博/Weibo、微信公众号、掘金、知乎、Linux.do。触发词包括"发布到视频号"、"上传视频号"、"发到小红书"、"发推"、"发微博"、"发公众号"、"发掘金"、"发知乎"、"发到LinuxDo"、"post anywhere"、"publish to"等。
 ---
 
-# WeChat Channels (视频号) Video Publishing
+用户输入 $ARGUMENTS
 
-Automate video publishing to WeChat Channels creator platform via headless Chrome + agent-browser + Playwright CDP.
+# Post-Anywhere Skill
 
-## Architecture Overview
+使用 agent-browser 和 Playwright，帮助用户将文章、图片、视频上传到对应的社交平台。
 
-WeChat Channels creator platform (`channels.weixin.qq.com`) uses:
-- **wujie micro-frontend**: Content is inside a `<wujie-app>` shadow DOM host
-- **Nested frames**: The actual form lives in `https://channels.weixin.qq.com/platform/post/create` frame, with a sub-frame at `https://channels.weixin.qq.com/micro/content/post/create`
-- **ant-upload component**: File input is hidden inside the shadow DOM, requires filechooser interception
-- **QR code login**: Cannot be automated — user must scan with WeChat mobile app
+# Rules
 
-These architectural details matter because standard Playwright selectors and agent-browser snapshots cannot directly access elements inside the wujie shadow DOM. The workflow below uses specific techniques to work around each layer.
+1. 使用 `agent-browser --auto-connect` 自动连接用户的浏览器；如果是视频号平台则使用 `agent-browser --cdp 9222` 连接 Playwright 启动的 Chrome
+2. 最终操作只能是**暂存草稿**，禁止自动点击"发布"按钮，由用户自行确认发布
+3. 每步操作后用 `agent-browser snapshot -i` 确认元素 ref，因为页面状态变化可能导致 ref 编号变化
+4. 视频号平台需要特殊处理：使用 Playwright CDP 连接 + filechooser 事件上传 + frame 访问填写描述（详见视频号 reference）
 
-## Prerequisites
+# Core Workflow
 
-- `agent-browser` CLI installed
-- Playwright browsers installed: `npx playwright install chromium`
-- System dependencies for headless Chrome (Amazon Linux: `sudo yum install -y atk at-spi2-atk cups-libs libdrm libXcomposite libXdamage libXrandr mesa-libgbm pango alsa-lib nss libxkbcommon`)
-- `playwright` npm package in the project: `npm install playwright`
-- A video file ready to upload (MP4, H.264, ≤20GB, recommended 720p+)
+1. **确认发布信息**：调用 AskUserQuestion tool 确认：目标平台（还是**添加新平台**）、内容类型、内容来源（文件路径/直接输入/AI 创作）、标题、话题标签
+2. 简单了解 `agent-browser --help` 可用命令
+3. 读取 references 中对应平台和内容类型的 workflow
+4. 严格按照 workflow 中的步骤逐步执行
 
-## Complete Workflow
+# Self-evolution
 
-### Step 1: Launch Chrome with Remote Debugging
+## 修复失效的 Workflow
 
-Use `--headless=new` mode (not the older `--headless` or headless shell) — this is critical because WeChat's QR code does not render in the old headless mode or headless shell.
+网页交互可能发生变化，references 下面的 workflow 可能失效，按以下步骤修复：
 
-```bash
-CHROME_PATH=$(find ~/.cache/ms-playwright -name "chrome" -path "*/chrome-linux64/*" -type f 2>/dev/null | head -1)
+1. 运行 `agent-browser snapshot` 查看当前页面的详细元素
+2. 当查找失败，运行 `agent-browser eval "js"` 查看具体 html 元素
+3. 验证正确的交互路径后，编辑 references 下对应的 workflow 文件进行修正
 
-$CHROME_PATH \
-  --remote-debugging-port=9222 \
-  --no-sandbox \
-  --disable-gpu \
-  --headless=new \
-  --window-size=1920,1080 \
-  "https://channels.weixin.qq.com/login.html" &
+## 添加新的社交平台
 
-sleep 5
-curl -s http://localhost:9222/json/version  # Verify Chrome is running
-```
+当用户询问需要新添加一个平台时候，按以下步骤添加：
 
-### Step 2: Connect agent-browser and Get QR Code
+1. 参考 references 下已有的 workflow 作为模板
+2. 用 `agent-browser --help` 查看可用命令和 agent-browser 的 skill
+3. 只有当启动浏览器，完整一步一步测试新的平台交互路径，确保每步操作正确
+4. 才能在 references 目录下创建新平台的 workflow 文件，并在下方 References 中添加链接
 
-```bash
-agent-browser --cdp 9222 wait --load networkidle
-agent-browser --cdp 9222 wait 8000   # QR code needs extra time to render
-agent-browser --cdp 9222 screenshot /path/to/qr-code.png
-```
+# References
 
-Show the screenshot to the user and ask them to scan with WeChat. The QR code expires in ~5 minutes — if it does, reload the page and re-screenshot.
+## 微信视频号
+- `微信视频号`：查看[微信视频号](./references/微信视频号.md)发布视频时的 workflow（需 Playwright CDP + filechooser）
 
-**Wait for the user to confirm they have scanned and logged in before proceeding.**
+## 小红书
+- `小红书图文`：查看[小红书图文](./references/小红书图文.md)发布简短图文时的 workflow
+- `小红书长文`：查看[小红书长文](./references/小红书长文.md)发送长文本时的 workflow
 
-### Step 3: Verify Login and Navigate to Publish
+## X (Twitter)
+- `X推文`：查看[X推文](./references/X推文.md)发布推文时的 workflow
 
-```bash
-agent-browser --cdp 9222 wait --load networkidle
-agent-browser --cdp 9222 screenshot /path/to/logged-in.png
-```
+## 微博 (Weibo)
+- `微博`：查看[微博](./references/微博.md)发布微博时的 workflow
 
-Verify the screenshot shows the dashboard (look for user avatar, "首页", "内容管理" sidebar). Then:
+## 微信公众号
+- `微信公众号文章`：查看[微信公众号文章](./references/微信公众号文章.md)发布公众号文章时的 workflow
 
-```bash
-agent-browser --cdp 9222 snapshot -i
-# Look for: button "发表视频" [ref=eN]
-agent-browser --cdp 9222 click @eN   # Click 发表视频
-agent-browser --cdp 9222 wait --load networkidle
-agent-browser --cdp 9222 wait 3000
-```
+## 掘金
+- `掘金文章`：查看[掘金文章](./references/掘金文章.md)发布掘金文章并自动保存草稿的 workflow
 
-Verify URL is `https://channels.weixin.qq.com/platform/post/create`.
+## 知乎
+- `知乎想法`：查看[知乎想法](./references/知乎想法.md)发布知乎想法时的 workflow
 
-### Step 4: Upload Video File
-
-The upload input is hidden inside a wujie shadow DOM. Standard `agent-browser upload` will fail because the element is a `<span role="button">` not an `<input type="file">`. Use Playwright's filechooser event interception:
-
-```javascript
-// upload-video.js — run with: node upload-video.js
-const { chromium } = require('playwright');
-
-(async () => {
-  const browser = await chromium.connectOverCDP('http://localhost:9222');
-  const page = browser.contexts()[0].pages()[0];
-
-  const [fileChooser] = await Promise.all([
-    page.waitForEvent('filechooser', { timeout: 10000 }),
-    page.evaluate(() => {
-      const shadowEl = document.querySelector('wujie-app');
-      const sr = shadowEl.shadowRoot;
-      const fileInput = sr.querySelector('input[type="file"]');
-      fileInput.click();
-    })
-  ]);
-
-  await fileChooser.setFiles('/path/to/video.mp4');
-  console.log('Video uploaded!');
-
-  await page.waitForTimeout(10000); // Wait for upload processing
-})().catch(e => console.error(e.message));
-```
-
-After upload completes, screenshot to verify the video thumbnail and form fields appear.
-
-### Step 5: Fill Video Description
-
-The description editor is a `contenteditable` div with class `input-editor`, located inside the `platform/post/create` frame. It cannot be accessed by `agent-browser` because it's inside the wujie shadow DOM boundary. Use Playwright's frame access:
-
-```javascript
-// fill-description.js
-const { chromium } = require('playwright');
-
-(async () => {
-  const browser = await chromium.connectOverCDP('http://localhost:9222');
-  const page = browser.contexts()[0].pages()[0];
-
-  // Find the correct frame
-  const mainFrame = page.frames().find(f => f.url().includes('platform/post/create'));
-  const editor = await mainFrame.$('.input-editor');
-
-  if (editor) {
-    await editor.evaluate((el, text) => {
-      el.focus();
-      el.textContent = text;
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-    }, 'Your video description here #hashtag1 #hashtag2');
-    console.log('Description filled!');
-  }
-})().catch(e => console.error(e.message));
-```
-
-### Step 6: Fill Short Title
-
-The short title input IS accessible via agent-browser (it's outside the shadow DOM boundary):
-
-```bash
-agent-browser --cdp 9222 snapshot -i
-# Look for: textbox "概括视频主要内容，字数建议6-16个字符" [ref=eN]
-agent-browser --cdp 9222 fill @eN "Your short title here"
-```
-
-**Important**: Short title must be ≤16 Chinese characters. If exceeded, the platform shows a red "标题超过16字限制" error and the publish button becomes disabled.
-
-### Step 7: Publish
-
-```bash
-agent-browser --cdp 9222 snapshot -i
-# Look for: button "发表" [ref=eN] — should be orange/active color
-agent-browser --cdp 9222 click @eN
-agent-browser --cdp 9222 wait 10000
-agent-browser --cdp 9222 screenshot /path/to/result.png
-agent-browser --cdp 9222 get url
-```
-
-If successful, the URL will redirect to `https://channels.weixin.qq.com/platform/post/list` and the screenshot will show your video in the list with publish timestamp.
-
-### Step 8: Cleanup
-
-```bash
-pkill -f "chrome.*remote-debugging" 2>/dev/null
-```
-
-## Bundled Helper Script
-
-For convenience, use `scripts/publish.js` which combines steps 4-6 into a single script. See the script for usage.
-
-## Troubleshooting
-
-| Problem | Solution |
-|---------|----------|
-| QR code not rendering | Must use `--headless=new` flag, not `--headless` or headless shell |
-| `libatk-1.0.so.0` missing | Install system deps (see Prerequisites) |
-| `Cannot set input files to detached element` | Don't cache ElementHandles — use filechooser event pattern instead |
-| `agent-browser upload` fails with "not an HTMLInputElement" | Expected — use Playwright filechooser (Step 4) |
-| Description not filling | Must use Playwright frame access, not agent-browser (Step 5) |
-| "标题超过16字限制" | Short title must be ≤16 characters |
-| Publish button grayed out | Check for validation errors (title too long, missing required fields) |
-| `input-editor` not found in frame.evaluate() | Use `frame.$('.input-editor')` then `handle.evaluate()` — the element is findable via selector but not via in-page `document.querySelector` due to wujie isolation |
-
-## Video Requirements for 视频号
-
-| Spec | Requirement |
-|------|------------|
-| Format | MP4 (H.264) |
-| Max size | 20GB |
-| Max duration | 8 hours |
-| Resolution | 720p+ recommended, 1080x1920 ideal for vertical |
-| Aspect ratio | 9:16 (vertical) or 16:9 (horizontal) |
-| Frame rate | ≤60fps |
+## Linux.do
+- `LinuxDo发帖`：查看[LinuxDo发帖](./references/LinuxDo发帖.md)发布帖子（含类别与标签选择）的 workflow
